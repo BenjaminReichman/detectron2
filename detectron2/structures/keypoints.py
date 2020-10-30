@@ -141,8 +141,7 @@ def _keypoints_to_heatmap(
     return heatmaps, valid
 
 
-@torch.no_grad()
-def heatmaps_to_keypoints(maps: torch.Tensor, rois: torch.Tensor) -> torch.Tensor:
+def heatmaps_to_keypoints(maps: torch.Tensor, rois: torch.Tensor, requires_grad=False) -> torch.Tensor:
     """
     Extract predicted keypoint locations from heatmaps.
 
@@ -159,54 +158,56 @@ def heatmaps_to_keypoints(maps: torch.Tensor, rois: torch.Tensor) -> torch.Tenso
     we maintain consistency with :meth:`Keypoints.to_heatmap` by using the conversion from
     Heckbert 1990: c = d + 0.5, where d is a discrete coordinate and c is a continuous coordinate.
     """
-    offset_x = rois[:, 0]
-    offset_y = rois[:, 1]
 
-    widths = (rois[:, 2] - rois[:, 0]).clamp(min=1)
-    heights = (rois[:, 3] - rois[:, 1]).clamp(min=1)
-    widths_ceil = widths.ceil()
-    heights_ceil = heights.ceil()
-
-    num_rois, num_keypoints = maps.shape[:2]
-    xy_preds = maps.new_zeros(rois.shape[0], num_keypoints, 4)
-
-    width_corrections = widths / widths_ceil
-    height_corrections = heights / heights_ceil
-
-    keypoints_idx = torch.arange(num_keypoints, device=maps.device)
-
-    for i in range(num_rois):
-        outsize = (int(heights_ceil[i]), int(widths_ceil[i]))
-        roi_map = interpolate(maps[[i]], size=outsize, mode="bicubic", align_corners=False).squeeze(
-            0
-        )  # #keypoints x H x W
-
-        # softmax over the spatial region
-        max_score, _ = roi_map.view(num_keypoints, -1).max(1)
-        max_score = max_score.view(num_keypoints, 1, 1)
-        tmp_full_resolution = (roi_map - max_score).exp_()
-        tmp_pool_resolution = (maps[i] - max_score).exp_()
-        # Produce scores over the region H x W, but normalize with POOL_H x POOL_W,
-        # so that the scores of objects of different absolute sizes will be more comparable
-        roi_map_scores = tmp_full_resolution / tmp_pool_resolution.sum((1, 2), keepdim=True)
-
-        w = roi_map.shape[2]
-        pos = roi_map.view(num_keypoints, -1).argmax(1)
-
-        x_int = pos % w
-        y_int = (pos - x_int) // w
-
-        assert (
-            roi_map_scores[keypoints_idx, y_int, x_int]
-            == roi_map_scores.view(num_keypoints, -1).max(1)[0]
-        ).all()
-
-        x = (x_int.float() + 0.5) * width_corrections[i]
-        y = (y_int.float() + 0.5) * height_corrections[i]
-
-        xy_preds[i, :, 0] = x + offset_x[i]
-        xy_preds[i, :, 1] = y + offset_y[i]
-        xy_preds[i, :, 2] = roi_map[keypoints_idx, y_int, x_int]
-        xy_preds[i, :, 3] = roi_map_scores[keypoints_idx, y_int, x_int]
+    with torch.set_grad_enabled(requires_grad):
+        offset_x = rois[:, 0]
+        offset_y = rois[:, 1]
+    
+        widths = (rois[:, 2] - rois[:, 0]).clamp(min=1)
+        heights = (rois[:, 3] - rois[:, 1]).clamp(min=1)
+        widths_ceil = widths.ceil()
+        heights_ceil = heights.ceil()
+    
+        num_rois, num_keypoints = maps.shape[:2]
+        xy_preds = maps.new_zeros(rois.shape[0], num_keypoints, 4)
+    
+        width_corrections = widths / widths_ceil
+        height_corrections = heights / heights_ceil
+    
+        keypoints_idx = torch.arange(num_keypoints, device=maps.device)
+    
+        for i in range(num_rois):
+            outsize = (int(heights_ceil[i]), int(widths_ceil[i]))
+            roi_map = interpolate(maps[[i]], size=outsize, mode="bicubic", align_corners=False).squeeze(
+                0
+            )  # #keypoints x H x W
+    
+            # softmax over the spatial region
+            max_score, _ = roi_map.view(num_keypoints, -1).max(1)
+            max_score = max_score.view(num_keypoints, 1, 1)
+            tmp_full_resolution = (roi_map - max_score).exp_()
+            tmp_pool_resolution = (maps[i] - max_score).exp_()
+            # Produce scores over the region H x W, but normalize with POOL_H x POOL_W,
+            # so that the scores of objects of different absolute sizes will be more comparable
+            roi_map_scores = tmp_full_resolution / tmp_pool_resolution.sum((1, 2), keepdim=True)
+    
+            w = roi_map.shape[2]
+            pos = roi_map.view(num_keypoints, -1).argmax(1)
+    
+            x_int = pos % w
+            y_int = (pos - x_int) // w
+    
+            assert (
+                roi_map_scores[keypoints_idx, y_int, x_int]
+                == roi_map_scores.view(num_keypoints, -1).max(1)[0]
+            ).all()
+    
+            x = (x_int.float() + 0.5) * width_corrections[i]
+            y = (y_int.float() + 0.5) * height_corrections[i]
+    
+            xy_preds[i, :, 0] = x + offset_x[i]
+            xy_preds[i, :, 1] = y + offset_y[i]
+            xy_preds[i, :, 2] = roi_map[keypoints_idx, y_int, x_int]
+            xy_preds[i, :, 3] = roi_map_scores[keypoints_idx, y_int, x_int]
 
     return xy_preds

@@ -3,7 +3,7 @@ from fvcore.common.file_io import PathManager
 
 from detectron2.data import MetadataCatalog
 
-from densepose import DensePoseTransformData
+from DensePose.densepose import DensePoseTransformData
 
 
 def load_for_dataset(dataset_name):

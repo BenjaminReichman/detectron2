@@ -7,7 +7,7 @@ from .coco import register_datasets as register_coco_datasets
 DEFAULT_DATASETS_ROOT = "datasets"
 
 
-register_coco_datasets(COCO_DATASETS, DEFAULT_DATASETS_ROOT)
-register_coco_datasets(BASE_COCO_DATASETS, DEFAULT_DATASETS_ROOT)
+# register_coco_datasets(COCO_DATASETS, DEFAULT_DATASETS_ROOT)
+# register_coco_datasets(BASE_COCO_DATASETS, DEFAULT_DATASETS_ROOT)
 
-register_chimpnsee_dataset(DEFAULT_DATASETS_ROOT)
+# register_chimpnsee_dataset(DEFAULT_DATASETS_ROOT)

@@ -651,6 +651,7 @@ class StandardROIHeads(ROIHeads):
         features: Dict[str, torch.Tensor],
         proposals: List[Instances],
         targets: Optional[List[Instances]] = None,
+        requires_grad=False
     ) -> Tuple[List[Instances], Dict[str, torch.Tensor]]:
         """
         See :class:`ROIHeads.forward`.
@@ -673,11 +674,11 @@ class StandardROIHeads(ROIHeads):
             pred_instances = self._forward_box(features, proposals)
             # During inference cascaded prediction is used: the mask and keypoints heads are only
             # applied to the top scoring box detections.
-            pred_instances = self.forward_with_given_boxes(features, pred_instances)
+            pred_instances = self.forward_with_given_boxes(features, pred_instances, requires_grad)
             return pred_instances, {}
 
     def forward_with_given_boxes(
-        self, features: Dict[str, torch.Tensor], instances: List[Instances]
+        self, features: Dict[str, torch.Tensor], instances: List[Instances], requires_grad=False
     ) -> List[Instances]:
         """
         Use the given boxes in `instances` to produce other (non-box) per-ROI outputs.
@@ -700,7 +701,7 @@ class StandardROIHeads(ROIHeads):
         assert instances[0].has("pred_boxes") and instances[0].has("pred_classes")
 
         instances = self._forward_mask(features, instances)
-        instances = self._forward_keypoint(features, instances)
+        instances = self._forward_keypoint(features, instances, requires_grad)
         return instances
 
     def _forward_box(
@@ -777,7 +778,7 @@ class StandardROIHeads(ROIHeads):
             return self.mask_head(mask_features, instances)
 
     def _forward_keypoint(
-        self, features: Dict[str, torch.Tensor], instances: List[Instances]
+        self, features: Dict[str, torch.Tensor], instances: List[Instances], requires_grad=False
     ) -> Union[Dict[str, torch.Tensor], List[Instances]]:
         """
         Forward logic of the keypoint prediction branch.
@@ -809,4 +810,4 @@ class StandardROIHeads(ROIHeads):
         else:
             pred_boxes = [x.pred_boxes for x in instances]
             keypoint_features = self.keypoint_pooler(features, pred_boxes)
-            return self.keypoint_head(keypoint_features, instances)
+            return self.keypoint_head(keypoint_features, instances, requires_grad)

@@ -96,7 +96,7 @@ def keypoint_rcnn_loss(pred_keypoint_logits, instances, normalizer):
     return keypoint_loss
 
 
-def keypoint_rcnn_inference(pred_keypoint_logits, pred_instances):
+def keypoint_rcnn_inference(pred_keypoint_logits, pred_instances, requires_grad=False):
     """
     Post process each predicted keypoint heatmap in `pred_keypoint_logits` into (x, y, score)
         and add it to the `pred_instances` as a `pred_keypoints` field.
@@ -115,8 +115,8 @@ def keypoint_rcnn_inference(pred_keypoint_logits, pred_instances):
     """
     # flatten all bboxes from all images together (list[Boxes] -> Rx4 tensor)
     bboxes_flat = cat([b.pred_boxes.tensor for b in pred_instances], dim=0)
-
-    keypoint_results = heatmaps_to_keypoints(pred_keypoint_logits.detach(), bboxes_flat.detach())
+    
+    keypoint_results = heatmaps_to_keypoints(pred_keypoint_logits, bboxes_flat, requires_grad)
     num_instances_per_image = [len(i) for i in pred_instances]
     keypoint_results = keypoint_results[:, :, [0, 1, 3]].split(num_instances_per_image, dim=0)
 
@@ -168,7 +168,7 @@ class BaseKeypointRCNNHead(nn.Module):
             ret["loss_normalizer"] = "visible"
         return ret
 
-    def forward(self, x, instances: List[Instances]):
+    def forward(self, x, instances: List[Instances], requires_grad=False):
         """
         Args:
             x: input region feature(s) provided by :class:`ROIHeads`.
@@ -193,7 +193,7 @@ class BaseKeypointRCNNHead(nn.Module):
                 * self.loss_weight
             }
         else:
-            keypoint_rcnn_inference(x, instances)
+            keypoint_rcnn_inference(x, instances, requires_grad)
             return instances
 
     def layers(self, x):
