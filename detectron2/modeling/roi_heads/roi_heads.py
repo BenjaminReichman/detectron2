@@ -2,7 +2,7 @@
 import inspect
 import logging
 import numpy as np
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import torch
 from torch import nn
 
@@ -846,5 +846,5 @@ class StandardROIHeads(ROIHeads):
             features = self.keypoint_pooler(features, boxes)
         else:
             features = dict([(f, features[f]) for f in self.keypoint_in_features])
-        return self.keypoint_head(keypoint_features, instances, requires_grad)
+        return self.keypoint_head(features, instances, requires_grad)
 
