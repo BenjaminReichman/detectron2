@@ -96,11 +96,7 @@ def keypoint_rcnn_loss(pred_keypoint_logits, instances, normalizer):
     return keypoint_loss
 
 
-<<<<<<< HEAD
 def keypoint_rcnn_inference(pred_keypoint_logits, pred_instances, requires_grad=False):
-=======
-def keypoint_rcnn_inference(pred_keypoint_logits: torch.Tensor, pred_instances: List[Instances]):
->>>>>>> origin/master
     """
     Post process each predicted keypoint heatmap in `pred_keypoint_logits` into (x, y, score)
         and add it to the `pred_instances` as a `pred_keypoints` field.
