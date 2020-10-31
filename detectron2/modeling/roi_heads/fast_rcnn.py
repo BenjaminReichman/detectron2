@@ -1,6 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 import logging
-from typing import Dict, Union
+from typing import Dict, List, Tuple, Union
 import torch
 from fvcore.nn import giou_loss, smooth_l1_loss
 from torch import nn
@@ -43,7 +43,14 @@ Naming convention:
 """
 
 
-def fast_rcnn_inference(boxes, scores, image_shapes, score_thresh, nms_thresh, topk_per_image):
+def fast_rcnn_inference(
+    boxes: List[torch.Tensor],
+    scores: List[torch.Tensor],
+    image_shapes: List[Tuple[int, int]],
+    score_thresh: float,
+    nms_thresh: float,
+    topk_per_image: int,
+):
     """
     Call `fast_rcnn_inference_single_image` for all images.
 
@@ -79,7 +86,12 @@ def fast_rcnn_inference(boxes, scores, image_shapes, score_thresh, nms_thresh, t
 
 
 def fast_rcnn_inference_single_image(
-    boxes, scores, image_shape, score_thresh, nms_thresh, topk_per_image
+    boxes,
+    scores,
+    image_shape: Tuple[int, int],
+    score_thresh: float,
+    nms_thresh: float,
+    topk_per_image: int,
 ):
     """
     Single-image inference. Return bounding-box detection results by thresholding
@@ -104,7 +116,8 @@ def fast_rcnn_inference_single_image(
     boxes.clip(image_shape)
     boxes = boxes.tensor.view(-1, num_bbox_reg_classes, 4)  # R x C x 4
 
-    # Filter results based on detection scores
+    # 1. Filter results based on detection scores. It can make NMS more efficient
+    #    by filtering out low-confidence detections.
     filter_mask = scores > score_thresh  # R x K
     # R' x 2. First column contains indices of the R predictions;
     # Second column contains indices of classes.
@@ -115,7 +128,7 @@ def fast_rcnn_inference_single_image(
         boxes = boxes[filter_mask]
     scores = scores[filter_mask]
 
-    # Apply per-class NMS
+    # 2. Apply NMS for each class independently.
     keep = batched_nms(boxes, scores, filter_inds[:, 1], nms_thresh)
     if topk_per_image >= 0:
         keep = keep[:topk_per_image]
@@ -130,8 +143,8 @@ def fast_rcnn_inference_single_image(
 
 class FastRCNNOutputs:
     """
-    A class that stores information about outputs of a Fast R-CNN head.
-    It provides methods that are used to decode the outputs of a Fast R-CNN head.
+    An internal implementation that stores information about outputs of a Fast R-CNN head,
+    and provides methods that are used to decode the outputs of a Fast R-CNN head.
     """
 
     def __init__(
@@ -190,7 +203,7 @@ class FastRCNNOutputs:
                 self.gt_classes = cat([p.gt_classes for p in proposals], dim=0)
         else:
             self.proposals = Boxes(torch.zeros(0, 4, device=self.pred_proposal_deltas.device))
-        self._no_instances = len(proposals) == 0  # no instances found
+        self._no_instances = len(self.proposals) == 0  # no instances found
 
     def _log_accuracy(self):
         """
@@ -348,8 +361,9 @@ class FastRCNNOutputs:
 class FastRCNNOutputLayers(nn.Module):
     """
     Two linear layers for predicting Fast R-CNN outputs:
-      (1) proposal-to-detection box regression deltas
-      (2) classification scores
+
+    1. proposal-to-detection box regression deltas
+    2. classification scores
     """
 
     @configurable
@@ -383,8 +397,8 @@ class FastRCNNOutputLayers(nn.Module):
             box_reg_loss_type (str): Box regression loss type. One of: "smooth_l1", "giou"
             loss_weight (float|dict): weights to use for losses. Can be single float for weighting
                 all losses, or a dict of individual weightings. Valid dict keys are:
-                    "loss_cls" - applied to classification loss
-                    "loss_box_reg" - applied to box regression loss
+                    * "loss_cls": applied to classification loss
+                    * "loss_box_reg": applied to box regression loss
         """
         super().__init__()
         if isinstance(input_shape, int):  # some backward compatibility
@@ -430,11 +444,16 @@ class FastRCNNOutputLayers(nn.Module):
 
     def forward(self, x):
         """
+        Args:
+            x: per-region features of shape (N, ...) for N bounding boxes to predict.
+
         Returns:
-            Tensor: shape (N,K+1), scores for each of the N box. Each row contains the scores for
-                K object categories and 1 background class.
-            Tensor: bounding box regression deltas for each box. Shape is shape (N,Kx4), or (N,4)
-                for class-agnostic regression.
+            (Tensor, Tensor):
+            First tensor: shape (N,K+1), scores for each of the N box. Each row contains the
+            scores for K object categories and 1 background class.
+
+            Second tensor: bounding box regression deltas for each box. Shape is shape (N,Kx4),
+            or (N,4) for class-agnostic regression.
         """
         if x.dim() > 2:
             x = torch.flatten(x, start_dim=1)
@@ -447,8 +466,12 @@ class FastRCNNOutputLayers(nn.Module):
         """
         Args:
             predictions: return values of :meth:`forward()`.
-            proposals (list[Instances]): proposals that match the features
-                that were used to compute predictions.
+            proposals (list[Instances]): proposals that match the features that were used
+                to compute predictions. The fields ``proposal_boxes``, ``gt_boxes``,
+                ``gt_classes`` are expected.
+
+        Returns:
+            Dict[str, Tensor]: dict of losses
         """
         scores, proposal_deltas = predictions
         losses = FastRCNNOutputs(
@@ -461,8 +484,13 @@ class FastRCNNOutputLayers(nn.Module):
         ).losses()
         return {k: v * self.loss_weight.get(k, 1.0) for k, v in losses.items()}
 
-    def inference(self, predictions, proposals):
+    def inference(self, predictions: Tuple[torch.Tensor, torch.Tensor], proposals: List[Instances]):
         """
+        Args:
+            predictions: return values of :meth:`forward()`.
+            proposals (list[Instances]): proposals that match the features that were
+                used to compute predictions. The ``proposal_boxes`` field is expected.
+
         Returns:
             list[Instances]: same as `fast_rcnn_inference`.
             list[Tensor]: same as `fast_rcnn_inference`.
@@ -481,10 +509,16 @@ class FastRCNNOutputLayers(nn.Module):
 
     def predict_boxes_for_gt_classes(self, predictions, proposals):
         """
+        Args:
+            predictions: return values of :meth:`forward()`.
+            proposals (list[Instances]): proposals that match the features that were used
+                to compute predictions. The fields ``proposal_boxes``, ``gt_classes`` are expected.
+
         Returns:
-            list[Tensor]: A list of Tensors of predicted boxes for GT classes in case of
+            list[Tensor]:
+                A list of Tensors of predicted boxes for GT classes in case of
                 class-specific box head. Element i of the list has shape (Ri, B), where Ri is
-                the number of predicted objects for image i and B is the box dimension (4 or 5)
+                the number of proposals for image i and B is the box dimension (4 or 5)
         """
         if not len(proposals):
             return []
@@ -493,7 +527,7 @@ class FastRCNNOutputLayers(nn.Module):
         proposal_boxes = proposal_boxes[0].cat(proposal_boxes).tensor
         N, B = proposal_boxes.shape
         predict_boxes = self.box2box_transform.apply_deltas(
-            proposal_deltas, proposal_boxes
+            proposal_deltas.float(), proposal_boxes
         )  # Nx(KxB)
 
         K = predict_boxes.shape[1] // B
@@ -509,12 +543,20 @@ class FastRCNNOutputLayers(nn.Module):
         num_prop_per_image = [len(p) for p in proposals]
         return predict_boxes.split(num_prop_per_image)
 
-    def predict_boxes(self, predictions, proposals):
+    def predict_boxes(
+        self, predictions: Tuple[torch.Tensor, torch.Tensor], proposals: List[Instances]
+    ):
         """
+        Args:
+            predictions: return values of :meth:`forward()`.
+            proposals (list[Instances]): proposals that match the features that were
+                used to compute predictions. The ``proposal_boxes`` field is expected.
+
         Returns:
-            list[Tensor]: A list of Tensors of predicted class-specific or class-agnostic boxes
+            list[Tensor]:
+                A list of Tensors of predicted class-specific or class-agnostic boxes
                 for each image. Element i has shape (Ri, K * B) or (Ri, B), where Ri is
-                the number of predicted objects for image i and B is the box dimension (4 or 5)
+                the number of proposals for image i and B is the box dimension (4 or 5)
         """
         if not len(proposals):
             return []
@@ -523,16 +565,25 @@ class FastRCNNOutputLayers(nn.Module):
         proposal_boxes = [p.proposal_boxes for p in proposals]
         proposal_boxes = proposal_boxes[0].cat(proposal_boxes).tensor
         predict_boxes = self.box2box_transform.apply_deltas(
-            proposal_deltas, proposal_boxes
+            # ensure fp32 for decoding precision
+            proposal_deltas.float(),
+            proposal_boxes,
         )  # Nx(KxB)
         return predict_boxes.split(num_prop_per_image)
 
-    def predict_probs(self, predictions, proposals):
+    def predict_probs(
+        self, predictions: Tuple[torch.Tensor, torch.Tensor], proposals: List[Instances]
+    ):
         """
+        Args:
+            predictions: return values of :meth:`forward()`.
+            proposals (list[Instances]): proposals that match the features that were
+                used to compute predictions.
+
         Returns:
-            list[Tensor]: A list of Tensors of predicted class probabilities for each image.
-                Element i has shape (Ri, K + 1), where Ri is the number of predicted objects
-                for image i.
+            list[Tensor]:
+                A list of Tensors of predicted class probabilities for each image.
+                Element i has shape (Ri, K + 1), where Ri is the number of proposals for image i.
         """
         scores, _ = predictions
         num_inst_per_image = [len(p) for p in proposals]

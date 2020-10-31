@@ -425,7 +425,7 @@ class ResNet(Backbone):
             x: Tensor of shape (N,C,H,W). H, W must be a multiple of ``self.size_divisibility``.
 
         Returns:
-            dict[str->Tensor]
+            dict[str->Tensor]: names and the corresponding features
         """
         assert x.dim() == 4, f"ResNet takes an input of shape (N, C, H, W). Got {x.shape} instead!"
         outputs = {}
@@ -510,7 +510,8 @@ class ResNet(Backbone):
             )
 
         Usually, layers that produce the same feature map spatial size are defined as one
-        "stage" (in :paper:`FPN`). In this case ``stride_per_block[1:]`` should all be 1.
+        "stage" (in :paper:`FPN`). Under such definition, ``stride_per_block[1:]`` should
+        all be 1.
         """
         if first_stride is not None:
             assert "stride" not in kwargs and "stride_per_block" not in kwargs
@@ -609,7 +610,9 @@ def build_resnet_backbone(cfg, input_shape):
 
     # Avoid creating variables without gradients
     # It consumes extra memory and may cause allreduce to fail
-    out_stage_idx = [{"res2": 2, "res3": 3, "res4": 4, "res5": 5}[f] for f in out_features]
+    out_stage_idx = [
+        {"res2": 2, "res3": 3, "res4": 4, "res5": 5}[f] for f in out_features if f != "stem"
+    ]
     max_stage_idx = max(out_stage_idx)
     for idx, stage_idx in enumerate(range(2, max_stage_idx + 1)):
         dilation = res5_dilation if stage_idx == 5 else 1
