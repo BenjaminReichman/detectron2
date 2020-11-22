@@ -20,6 +20,4 @@ def build_model(cfg):
     meta_arch = cfg.MODEL.META_ARCHITECTURE
     model = META_ARCH_REGISTRY.get(meta_arch)(cfg)
     model.to(torch.device(cfg.MODEL.DEVICE))
-    # torch.distributed.init_process_group("nccl", rank=1, world_size=1)
-    # model.backbone = torch.nn.parallel.DistributedDataParallel(model.backbone)
     return model

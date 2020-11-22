@@ -126,7 +126,7 @@ class AspectRatioGroupedDataset(data.IterableDataset):
     all with similar aspect ratios.
     """
 
-    def __init__(self, dataset, batch_size, size_divisibility):
+    def __init__(self, dataset, batch_size):
         """
         Args:
             dataset: an iterable. Each element must be a dict with keys
@@ -136,23 +136,16 @@ class AspectRatioGroupedDataset(data.IterableDataset):
         self.dataset = dataset
         self.batch_size = batch_size
         self._buckets = [[] for _ in range(2)]
-        self.size_divisibility = size_divisibility
         # Hard-coded two aspect ratio groups: w > h and w < h.
         # Can add support for more aspect ratio groups, but doesn't seem useful
 
     def __iter__(self):
         for d in self.dataset:
-            w, h = d[-1][1], d[-1][0]
+            w, h = d["width"], d["height"]
             bucket_id = 0 if w > h else 1
             bucket = self._buckets[bucket_id]
-            if not bucket:
-                for i in range(len(d)):
-                    bucket.append([d[i]])
-            else:
-                for i in range(len(d)):
-                    bucket[i].append(d[i])
-            if len(bucket[2]) == self.batch_size:
+            bucket.append(d)
+            if len(bucket) == self.batch_size:
                 # this is where collation happens
-                # bucket[2] = ImageList.from_tensors(bucket[2], self.size_divisibility).tensor
                 yield bucket[:]
                 del bucket[:]

@@ -48,48 +48,48 @@ class BasicBlock(CNNBlockBase):
         super().__init__(in_channels, out_channels, stride)
 
         if in_channels != out_channels:
-            self.shortcut = torch.nn.Conv2d(
+            self.shortcut = Conv2d(
                 in_channels,
                 out_channels,
                 kernel_size=1,
                 stride=stride,
                 bias=False,
+                norm=get_norm(norm, out_channels),
             )
-            self.shortcutNorm = get_norm(norm, out_channels)
         else:
             self.shortcut = None
 
-        self.conv1 = torch.nn.Conv2d(
+        self.conv1 = Conv2d(
             in_channels,
             out_channels,
             kernel_size=3,
             stride=stride,
             padding=1,
             bias=False,
+            norm=get_norm(norm, out_channels),
         )
-        self.norm1 = get_norm(norm, out_channels) 
 
-        self.conv2 = torch.nn.Conv2d(
+        self.conv2 = Conv2d(
             out_channels,
             out_channels,
             kernel_size=3,
             stride=1,
             padding=1,
             bias=False,
+            norm=get_norm(norm, out_channels),
         )
-        self.norm2 = get_norm(norm, out_channels) 
 
         for layer in [self.conv1, self.conv2, self.shortcut]:
             if layer is not None:  # shortcut can be None
                 weight_init.c2_msra_fill(layer)
 
     def forward(self, x):
-        out = self.norm1(self.conv1(x))
+        out = self.conv1(x)
         out = F.relu_(out)
-        out = self.norm2(self.conv2(out))
+        out = self.conv2(out)
 
         if self.shortcut is not None:
-            shortcut = self.shortcutNorm(self.shortcut(x))
+            shortcut = self.shortcut(x)
         else:
             shortcut = x
 
@@ -131,14 +131,14 @@ class BottleneckBlock(CNNBlockBase):
         super().__init__(in_channels, out_channels, stride)
 
         if in_channels != out_channels:
-            self.shortcut = torch.nn.Conv2d(
+            self.shortcut = Conv2d(
                 in_channels,
                 out_channels,
                 kernel_size=1,
                 stride=stride,
                 bias=False,
+                norm=get_norm(norm, out_channels),
             )
-            self.shortcutNorm = get_norm(norm, bottleneck_channels)
         else:
             self.shortcut = None
 
@@ -147,16 +147,16 @@ class BottleneckBlock(CNNBlockBase):
         # stride in the 3x3 conv
         stride_1x1, stride_3x3 = (stride, 1) if stride_in_1x1 else (1, stride)
 
-        self.conv1 = torch.nn.Conv2d(
+        self.conv1 = Conv2d(
             in_channels,
             bottleneck_channels,
             kernel_size=1,
             stride=stride_1x1,
             bias=False,
+            norm=get_norm(norm, bottleneck_channels),
         )
-        self.norm1 = get_norm(norm, bottleneck_channels)
 
-        self.conv2 = torch.nn.Conv2d(
+        self.conv2 = Conv2d(
             bottleneck_channels,
             bottleneck_channels,
             kernel_size=3,
@@ -165,16 +165,16 @@ class BottleneckBlock(CNNBlockBase):
             bias=False,
             groups=num_groups,
             dilation=dilation,
+            norm=get_norm(norm, bottleneck_channels),
         )
-        self.norm2 = get_norm(norm, bottleneck_channels)
 
-        self.conv3 = torch.nn.Conv2d(
+        self.conv3 = Conv2d(
             bottleneck_channels,
             out_channels,
             kernel_size=1,
             bias=False,
+            norm=get_norm(norm, out_channels),
         )
-        self.norm3 = get_norm(norm, bottleneck_channels)
 
         for layer in [self.conv1, self.conv2, self.conv3, self.shortcut]:
             if layer is not None:  # shortcut can be None
@@ -193,16 +193,16 @@ class BottleneckBlock(CNNBlockBase):
         # Add it as an option when we need to use this code to train a backbone.
 
     def forward(self, x):
-        out = self.norm1(self.conv1(x))
+        out = self.conv1(x)
         out = F.relu_(out)
 
-        out = self.norm2(self.conv2(out))
+        out = self.conv2(out)
         out = F.relu_(out)
 
-        out = self.norm3(self.conv3(out))
+        out = self.conv3(out)
 
         if self.shortcut is not None:
-            shortcut = self.shortcutNorm(self.shortcut(x))
+            shortcut = self.shortcut(x)
         else:
             shortcut = x
 
@@ -235,7 +235,7 @@ class DeformBottleneckBlock(CNNBlockBase):
         self.deform_modulated = deform_modulated
 
         if in_channels != out_channels:
-            self.shortcut = torch.nn.Conv2d(
+            self.shortcut = Conv2d(
                 in_channels,
                 out_channels,
                 kernel_size=1,

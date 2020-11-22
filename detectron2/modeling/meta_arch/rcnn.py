@@ -147,22 +147,23 @@ class GeneralizedRCNN(nn.Module):
         """
         if not self.training:
             return self.inference(batched_inputs)
-        batched_inputs[2] = self.preprocess_image(batched_inputs[2])
-        if batched_inputs[3]:
-            gt_instances = [i.to(self.device) for i in batched_inputs[3]]
+
+        images = self.preprocess_image(batched_inputs)
+        if "instances" in batched_inputs[0]:
+            gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
         else:
             gt_instances = None
 
-        features = self.backbone(batched_inputs[2].tensor)
-        
+        features = self.backbone(images.tensor)
+
         if self.proposal_generator:
-            proposals, proposal_losses = self.proposal_generator(batched_inputs[2], features, gt_instances)
+            proposals, proposal_losses = self.proposal_generator(images, features, gt_instances)
         else:
             assert "proposals" in batched_inputs[0]
             proposals = [x["proposals"].to(self.device) for x in batched_inputs]
             proposal_losses = {}
 
-        _, detector_losses = self.roi_heads(batched_inputs[2], features, proposals, gt_instances)
+        _, detector_losses = self.roi_heads(images, features, proposals, gt_instances)
         if self.vis_period > 0:
             storage = get_event_storage()
             if storage.iter % self.vis_period == 0:
@@ -193,18 +194,17 @@ class GeneralizedRCNN(nn.Module):
         """
         assert not self.training
 
-        # images = self.preprocess_image(batched_inputs)
-        batched_inputs[2] = batched_inputs[2].float().to(self.device)
-        features = self.backbone(batched_inputs[2])
+        images = self.preprocess_image(batched_inputs)
+        features = self.backbone(images.tensor)
 
         if detected_instances is None:
             if self.proposal_generator:
-                proposals, _ = self.proposal_generator(batched_inputs[2], features, None)
+                proposals, _ = self.proposal_generator(images, features, None)
             else:
                 assert "proposals" in batched_inputs[0]
                 proposals = [x["proposals"].to(self.device) for x in batched_inputs]
 
-            results, _ = self.roi_heads(batched_inputs[2], features, proposals, None)
+            results, _ = self.roi_heads(images, features, proposals, None)
         else:
             detected_instances = [x.to(self.device) for x in detected_instances]
             results = self.roi_heads.forward_with_given_boxes(features, detected_instances)
@@ -218,9 +218,9 @@ class GeneralizedRCNN(nn.Module):
         """
         Normalize, pad and batch the input images.
         """
-        batched_inputs = [x.to(self.device) for x in batched_inputs]
-        batched_inputs = [(x - self.pixel_mean) / self.pixel_std for x in batched_inputs]
-        images = ImageList.from_tensors(batched_inputs, self.backbone.size_divisibility)
+        images = [x["image"].to(self.device) for x in batched_inputs]
+        images = [(x - self.pixel_mean) / self.pixel_std for x in images]
+        images = ImageList.from_tensors(images, self.backbone.size_divisibility)
         return images
 
     @staticmethod
@@ -233,8 +233,8 @@ class GeneralizedRCNN(nn.Module):
         for results_per_image, input_per_image, image_size in zip(
             instances, batched_inputs, image_sizes
         ):
-            height = input_per_image[-1][0]
-            width = input_per_image[-1][1]
+            height = input_per_image.get("height", image_size[0])
+            width = input_per_image.get("width", image_size[1])
             r = detector_postprocess(results_per_image, height, width)
             processed_results.append({"instances": r})
         return processed_results

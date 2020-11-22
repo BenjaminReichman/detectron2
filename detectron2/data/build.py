@@ -249,7 +249,7 @@ def get_detection_dataset_dicts(
 
 
 def build_batch_data_loader(
-    dataset, sampler, total_batch_size, *, size_divisibility, aspect_ratio_grouping=False, num_workers=0
+    dataset, sampler, total_batch_size, *, aspect_ratio_grouping=False, num_workers=0
 ):
     """
     Build a batched dataloader for training.
@@ -284,7 +284,7 @@ def build_batch_data_loader(
             collate_fn=operator.itemgetter(0),  # don't batch, but yield individual elements
             worker_init_fn=worker_init_reset_seed,
         )  # yield individual mapped dict
-        return AspectRatioGroupedDataset(data_loader, batch_size, size_divisibility)
+        return AspectRatioGroupedDataset(data_loader, batch_size)
     else:
         batch_sampler = torch.utils.data.sampler.BatchSampler(
             sampler, batch_size, drop_last=True
@@ -327,6 +327,7 @@ def build_detection_train_loader(cfg, mapper=None):
         else 0,
         proposal_files=cfg.DATASETS.PROPOSAL_FILES_TRAIN if cfg.MODEL.LOAD_PROPOSALS else None,
     )
+
     dataset = DatasetFromList(dataset_dicts, copy=False)
     if mapper is None:
         mapper = DatasetMapper(cfg, True)
@@ -349,7 +350,6 @@ def build_detection_train_loader(cfg, mapper=None):
         dataset,
         sampler,
         cfg.SOLVER.IMS_PER_BATCH,
-        size_divisibility=cfg.MODEL.ANCHOR_GENERATOR.SIZES[0][0],
         aspect_ratio_grouping=cfg.DATALOADER.ASPECT_RATIO_GROUPING,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
     )
