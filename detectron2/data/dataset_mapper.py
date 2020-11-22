@@ -47,6 +47,8 @@ class DatasetMapper:
         keypoint_hflip_indices: Optional[np.ndarray] = None,
         precomputed_proposal_topk: Optional[int] = None,
         recompute_boxes: bool = False,
+        pixel_mean,
+        pixel_std
     ):
         """
         NOTE: this interface is experimental.
@@ -77,6 +79,8 @@ class DatasetMapper:
         self.keypoint_hflip_indices = keypoint_hflip_indices
         self.proposal_topk          = precomputed_proposal_topk
         self.recompute_boxes        = recompute_boxes
+        self.pixel_mean             = pixel_mean
+        self.pixel_std              = pixel_std
         # fmt: on
         logger = logging.getLogger(__name__)
         mode = "training" if is_train else "inference"
@@ -99,6 +103,8 @@ class DatasetMapper:
             "instance_mask_format": cfg.INPUT.MASK_FORMAT,
             "use_keypoint": cfg.MODEL.KEYPOINT_ON,
             "recompute_boxes": recompute_boxes,
+            "pixel_mean": cfg.MODEL.PIXEL_MEAN,
+            "pixel_std": cfg.MODEL.PIXEL_STD
         }
 
         if cfg.MODEL.KEYPOINT_ON:
@@ -136,6 +142,9 @@ class DatasetMapper:
         image, sem_seg_gt = aug_input.image, aug_input.sem_seg
 
         image_shape = image.shape[:2]  # h, w
+        # image = image - self.pixel_mean
+        # image = image/self.pixel_std
+
         # Pytorch's dataloader is efficient on torch.Tensor due to shared-memory,
         # but not efficient on large generic data structures due to the use of pickle & mp.Queue.
         # Therefore it's important to use torch.Tensor.
@@ -163,7 +172,6 @@ class DatasetMapper:
                     anno.pop("segmentation", None)
                 if not self.use_keypoint:
                     anno.pop("keypoints", None)
-
             # USER: Implement additional transformations if you have other types of data
             annos = [
                 utils.transform_instance_annotations(
@@ -184,4 +192,9 @@ class DatasetMapper:
             if self.recompute_boxes:
                 instances.gt_boxes = instances.gt_masks.get_bounding_boxes()
             dataset_dict["instances"] = utils.filter_empty_instances(instances)
-        return dataset_dict
+        size = [dataset_dict["height"], dataset_dict["width"]]
+        dataset_dict.pop("height", None)
+        dataset_dict.pop("width", None)
+        data = [dataset_dict[i] for i in dataset_dict.keys()]
+        data.append(size)
+        return data
